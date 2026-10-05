@@ -1,71 +1,101 @@
 package com.example.mymovieapp
 
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import okhttp3.ConnectionSpec
-import okhttp3.OkHttpClient
-import okhttp3.TlsVersion
-import retrofit2.Call
-import retrofit2.Callback
-import retrofit2.Response
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
-import java.net.Proxy
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val showIntro = IntroManager.shouldShowIntro(this)
+
         setContent {
             MaterialTheme {
-                Surface { }
-            }
-        }
+                Surface {
+                    var showIntroState by remember { mutableStateOf(showIntro) }
 
-        // ==== ЗАПРОС К API TMDb ====
-        val apiKey = BuildConfig.TMDB_API_KEY
-
-        // Отключаем прокси и принудительно используем TLS 1.2
-        val spec = ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
-            .tlsVersions(TlsVersion.TLS_1_2)
-            .build()
-
-        val client = OkHttpClient.Builder()
-            .proxy(Proxy.NO_PROXY)
-            .connectionSpecs(listOf(spec))
-            .build()
-
-        val retrofit = Retrofit.Builder()
-            .baseUrl("https://api.themoviedb.org/3/")
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-
-        val service = retrofit.create(TmdbApiService::class.java)
-
-        val call = service.getTopRatedMovies(apiKey)
-        call.enqueue(object : Callback<TopRatedResponse> {
-            override fun onResponse(
-                call: Call<TopRatedResponse>,
-                response: Response<TopRatedResponse>
-            ) {
-                if (response.isSuccessful) {
-                    val movies = response.body()?.results
-                    Log.d("TMDb_Test", "Успех! Получено фильмов: ${movies?.size}")
-                    movies?.forEach { movie ->
-                        Log.d("TMDb_Test", "Фильм: ${movie.title}, Рейтинг: ${movie.voteAverage}")
+                    if (showIntroState) {
+                        IntroScreen(onContinue = { showIntroState = false })
+                    } else {
+                        MovieListScreen()
                     }
-                } else {
-                    Log.e("TMDb_Test", "Ошибка сервера: ${response.code()}")
                 }
             }
+        }
+    }
+}
 
-            override fun onFailure(call: Call<TopRatedResponse>, t: Throwable) {
-                Log.e("TMDb_Test", "Ошибка сети: ${t.message}")
+@Composable
+fun MovieListScreen(viewModel: MovieViewModel = viewModel()) {
+    // Состояние поискового запроса
+    var searchQuery by remember { mutableStateOf("") }
+
+    // Получаем поток фильмов в зависимости от поиска
+    val moviesFlow = remember(searchQuery) {
+        viewModel.getMoviesFlow(searchQuery)
+    }
+    val movies by moviesFlow.collectAsState(initial = emptyList())
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Поле поиска (пункт 4 задания)
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            label = { Text("Поиск фильмов") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        )
+
+        // Список фильмов
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
+        ) {
+            items(movies) { movie ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = movie.title,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Text(
+                            text = "Рейтинг: ${movie.voteAverage}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = movie.overview,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 3
+                        )
+                    }
+                }
             }
-        })
+        }
     }
 }
